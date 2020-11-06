@@ -21,8 +21,11 @@
 #include <bluetooth/gatt.h>
 #include <bluetooth/services/bas.h>
 #include <bluetooth/services/hrs.h>
-
+#define CYCLES_TO_DISCONNECT 4
 struct bt_conn *default_conn;
+static bool disconnect_pending=false; 
+static bool disconnect_on_timer=false; 
+
 
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
@@ -40,6 +43,8 @@ static void connected(struct bt_conn *conn, uint8_t err)
 		default_conn = bt_conn_ref(conn);
 		printk("Connected\n");
 	}
+	printk("Connection will be terminated in %d sec\n",CYCLES_TO_DISCONNECT*5);
+	disconnect_on_timer=true;
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -129,14 +134,35 @@ void main(void)
 	/* Implement notification. At the moment there is no suitable way
 	 * of starting delayed work so we do it here
 	 */
+
+	int counter=0;
 	while (1) {
-		k_sleep(K_SECONDS(1));
+		k_sleep(K_SECONDS(5));
+		if (disconnect_pending){
+			printk("Trying to disconnect\n");
+			err = bt_conn_disconnect(default_conn,BT_HCI_ERR_LOCALHOST_TERM_CONN);
+			if (err) {
+				printk("Could not disconnect(err %d)\n", err);
+			}	
+			disconnect_pending=false;
 
-		/* Heartrate measurements simulation */
-		hrs_notify();
+		}else if (disconnect_on_timer){
+			counter++;
+			if (counter==CYCLES_TO_DISCONNECT){
+				disconnect_pending=true;
+			}
+			/* Heartrate measurements simulation */
+			hrs_notify();
 
-		/* Battery level simulation */
-		bas_notify();
+			/* Battery level simulation */
+			bas_notify();
+		}
+		else {
+			/* Heartrate measurements simulation */
+			hrs_notify();
+
+			/* Battery level simulation */
+			bas_notify();
+		}
 	}
 }
-
